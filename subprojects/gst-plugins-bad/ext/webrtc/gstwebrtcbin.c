@@ -2769,10 +2769,10 @@ _add_fingerprint_to_media (GstWebRTCDTLSTransport * transport,
 /* based off https://tools.ietf.org/html/draft-ietf-rtcweb-jsep-18#section-5.2.1 */
 static gboolean
 sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
-    GstWebRTCRTPTransceiver * trans, guint media_idx,
-    GString * bundled_mids, guint bundle_idx, gchar * bundle_ufrag,
-    gchar * bundle_pwd, GArray * reserved_pts, GHashTable * all_mids,
-    GError ** error)
+    const GstSDPMedia * last_media, GstWebRTCRTPTransceiver * trans,
+    guint media_idx, GString * bundled_mids, guint bundle_idx,
+    gchar * bundle_ufrag, gchar * bundle_pwd, GArray * reserved_pts,
+    GHashTable * all_mids, GError ** error)
 {
   /* TODO:
    * rtp header extensions
@@ -2790,8 +2790,7 @@ sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
   GstCaps *caps;
   int i;
 
-  if (trans->direction == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE
-      || trans->direction == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_INACTIVE)
+  if (trans->direction == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE)
     return FALSE;
 
   g_assert (trans->mline == -1 || trans->mline == media_idx);
@@ -2799,8 +2798,47 @@ sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
   bundle_only = bundled_mids && bundle_idx != media_idx
       && webrtc->bundle_policy == GST_WEBRTC_BUNDLE_POLICY_MAX_BUNDLE;
 
-  /* mandated by JSEP */
-  gst_sdp_media_add_attribute (media, "setup", "actpass");
+  caps = _find_codec_preferences (webrtc, trans, media_idx, error);
+  caps = _add_supported_attributes_to_caps (webrtc, WEBRTC_TRANSCEIVER (trans),
+      caps);
+
+  if (!caps || gst_caps_is_empty (caps) || gst_caps_is_any (caps)) {
+    gst_clear_caps (&caps);
+
+    if (last_media) {
+      guint i, n;
+
+      n = gst_sdp_media_formats_len (last_media);
+      if (n > 0) {
+        caps = gst_caps_new_empty ();
+        for (i = 0; i < n; i++) {
+          guint fmt = atoi (gst_sdp_media_get_format (last_media, i));
+          GstCaps *tmp = gst_sdp_media_get_caps_from_media (last_media, fmt);
+          GstStructure *s = gst_caps_get_structure (tmp, 0);
+          gst_structure_set_name (s, "application/x-rtp");
+          gst_caps_append_structure (caps, gst_structure_copy (s));
+          gst_clear_caps (&tmp);
+        }
+      }
+    }
+
+    if (!caps) {
+      GST_WARNING_OBJECT (webrtc, "no caps available for transceiver %"
+          GST_PTR_FORMAT ", skipping", trans);
+      return FALSE;
+    }
+  }
+
+  if (last_media) {
+    const char *setup = gst_sdp_media_get_attribute_val (last_media, "setup");
+    if (setup)
+      gst_sdp_media_add_attribute (media, "setup", setup);
+    else
+      return FALSE;
+  } else {
+    /* mandated by JSEP */
+    gst_sdp_media_add_attribute (media, "setup", "actpass");
+  }
 
   /* FIXME: deal with ICE restarts */
   if (last_offer && trans->mline != -1 && trans->mid) {
@@ -2846,18 +2884,6 @@ sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
       trans->direction);
   gst_sdp_media_add_attribute (media, direction, "");
   g_free (direction);
-
-  caps = _find_codec_preferences (webrtc, trans, media_idx, error);
-
-  if (!caps || gst_caps_is_empty (caps) || gst_caps_is_any (caps)) {
-    GST_WARNING_OBJECT (webrtc, "no caps available for transceiver, skipping");
-    if (caps)
-      gst_caps_unref (caps);
-    return FALSE;
-  }
-
-  caps = _add_supported_attributes_to_caps (webrtc, WEBRTC_TRANSCEIVER (trans),
-      caps);
 
   for (i = 0; i < gst_caps_get_size (caps); i++) {
     GstCaps *format = gst_caps_new_empty ();
@@ -3184,9 +3210,11 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
           trans = g_ptr_array_index (webrtc->priv->transceivers, j);
 
           if (trans->mid && g_strcmp0 (trans->mid, last_mid) == 0) {
-            GstSDPMedia *media;
-            const gchar *mid;
             WebRTCTransceiver *wtrans = WEBRTC_TRANSCEIVER (trans);
+            const char *mid;
+            GstSDPMedia media;
+
+            memset (&media, 0, sizeof (media));
 
             g_assert (!g_list_find (seen_transceivers, trans));
 
@@ -3204,30 +3232,35 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
                 GST_PTR_FORMAT " with mid %s into media index %u", trans,
                 trans->mid, media_idx);
 
-            /* FIXME: deal with format changes */
-            gst_sdp_media_copy (last_media, &media);
-            _media_replace_direction (media, trans->direction);
-
-            mid = gst_sdp_media_get_attribute_val (media, "mid");
-            g_assert (mid);
-
-            if (g_hash_table_contains (all_mids, mid)) {
-              gst_sdp_media_free (media);
-              g_set_error (error, GST_WEBRTC_BIN_ERROR,
-                  GST_WEBRTC_BIN_ERROR_FAILED,
-                  "Duplicate mid %s when creating offer", mid);
-              goto cancel_offer;
+            if (webrtc->bundle_policy == GST_WEBRTC_BUNDLE_POLICY_NONE) {
+              reserved_pts = g_array_new (FALSE, FALSE, sizeof (guint));
             }
 
-            g_hash_table_insert (all_mids, g_strdup (mid), NULL);
+            gst_sdp_media_init (&media);
+            if (!sdp_media_from_transceiver (webrtc, &media, last_media, trans,
+                    media_idx, bundled_mids, 0, bundle_ufrag, bundle_pwd,
+                    reserved_pts, all_mids, error)) {
+              gst_sdp_media_uninit (&media);
+              if (!*error)
+                g_set_error_literal (error, GST_WEBRTC_BIN_ERROR,
+                    GST_WEBRTC_BIN_ERROR_INVALID_MODIFICATION,
+                    "Could not reuse transceiver");
+            }
 
-            if (bundled_mids)
-              g_string_append_printf (bundled_mids, " %s", mid);
+            if (webrtc->bundle_policy == GST_WEBRTC_BUNDLE_POLICY_NONE) {
+              g_array_free (reserved_pts, TRUE);
+              reserved_pts = NULL;
+            }
+            if (*error)
+              goto cancel_offer;
 
-            gst_sdp_message_add_media (ret, media);
+            mid = gst_sdp_media_get_attribute_val (&media, "mid");
+            g_assert (mid && g_strcmp0 (last_mid, mid) == 0);
+
+            gst_sdp_message_add_media (ret, &media);
             media_idx++;
 
-            gst_sdp_media_free (media);
+            gst_sdp_media_uninit (&media);
             seen_transceivers = g_list_prepend (seen_transceivers, trans);
             break;
           }
@@ -3358,7 +3391,7 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
     GST_LOG_OBJECT (webrtc, "adding transceiver %" GST_PTR_FORMAT " at media "
         "index %u", trans, media_idx);
 
-    if (sdp_media_from_transceiver (webrtc, &media, trans, media_idx,
+    if (sdp_media_from_transceiver (webrtc, &media, NULL, trans, media_idx,
             bundled_mids, 0, bundle_ufrag, bundle_pwd, reserved_pts, all_mids,
             error)) {
       /* as per JSEP, a=rtcp-mux-only is only added for new streams */
@@ -4420,15 +4453,42 @@ _filter_sdp_fields (GQuark field_id, const GValue * value,
   return TRUE;
 }
 
-static void
-_set_rtx_ptmap_from_stream (GstWebRTCBin * webrtc, TransportStream * stream)
+static gboolean
+_merge_structure (GQuark field_id, const GValue * value, gpointer user_data)
 {
+  GstStructure *s = user_data;
+
+  gst_structure_id_set_value (s, field_id, value);
+
+  return TRUE;
+}
+
+static void
+_set_internal_rtpbin_element_props_from_stream (GstWebRTCBin * webrtc,
+    TransportStream * stream)
+{
+  GstStructure *merged_local_rtx_ssrc_map;
+  gboolean stream_has_video = FALSE;
+  gint red_pt, ulpfec_pt;
   gint *rtx_pt;
   gsize rtx_count;
+  guint max_fec_percentage = 0;
+  guint i;
 
   rtx_pt = transport_stream_get_all_pt (stream, "RTX", &rtx_count);
-  GST_LOG_OBJECT (stream, "have %" G_GSIZE_FORMAT " rtx payloads", rtx_count);
-  if (rtx_pt) {
+
+  red_pt = transport_stream_get_pt (stream, "RED");
+  if (red_pt <= 0)
+    red_pt = -1;
+
+  ulpfec_pt = transport_stream_get_pt (stream, "ULPFEC");
+  if (ulpfec_pt <= 0)
+    ulpfec_pt = 0;
+
+  GST_DEBUG_OBJECT (stream, "have red pt %i, ulpfec pt %i and %" G_GSIZE_FORMAT
+      " rtx payloads", red_pt, ulpfec_pt, rtx_count);
+
+  if (rtx_pt && rtx_count > 0) {
     GstStructure *pt_map = gst_structure_new_empty ("application/x-rtp-pt-map");
     gsize i;
 
@@ -4451,6 +4511,63 @@ _set_rtx_ptmap_from_stream (GstWebRTCBin * webrtc, TransportStream * stream)
       g_object_set (stream->rtxsend, "payload-type-map", pt_map, NULL);
 
     gst_structure_free (pt_map);
+  }
+  g_clear_pointer (&rtx_pt, g_free);
+
+  merged_local_rtx_ssrc_map =
+      gst_structure_new_empty ("application/x-rtp-ssrc-map");
+
+  for (i = 0; i < webrtc->priv->transceivers->len; i++) {
+    GstWebRTCRTPTransceiver *rtp_trans =
+        g_ptr_array_index (webrtc->priv->transceivers, i);
+    WebRTCTransceiver *trans = WEBRTC_TRANSCEIVER (rtp_trans);
+
+    if (trans->stream == stream) {
+      if (rtp_trans->kind == GST_WEBRTC_KIND_VIDEO)
+        stream_has_video = TRUE;
+
+      if (trans->local_rtx_ssrc_map) {
+        gst_structure_foreach (trans->local_rtx_ssrc_map,
+            _merge_structure, merged_local_rtx_ssrc_map);
+      }
+
+      if (ulpfec_pt != 0 && trans->fec_percentage > max_fec_percentage) {
+        max_fec_percentage = trans->fec_percentage;
+      }
+    }
+  }
+
+  if (stream->rtxsend)
+    g_object_set (stream->rtxsend, "ssrc-map", merged_local_rtx_ssrc_map, NULL);
+  gst_clear_structure (&merged_local_rtx_ssrc_map);
+
+  if (stream->reddec)
+    g_object_set (stream->reddec, "pt", red_pt, NULL);
+  if (stream->redenc) {
+    gboolean always_produce = FALSE;
+    if (red_pt == -1) {
+      /* passthrough settings */
+      red_pt = 0;
+      always_produce = FALSE;
+    }
+    g_object_set (stream->redenc, "pt", red_pt, "allow-no-red-blocks",
+        always_produce, NULL);
+  }
+
+  {
+    GList *l;
+
+    for (l = stream->fecdecs; l; l = l->next) {
+      GstElement *fecdec = (GstElement *) l->data;
+
+      if (fecdec)
+        g_object_set (fecdec, "pt", ulpfec_pt, NULL);
+    }
+
+    if (stream->ulpfecenc) {
+      g_object_set (stream->ulpfecenc, "pt", ulpfec_pt, "multipacket",
+          stream_has_video, "percentage", max_fec_percentage, NULL);
+    }
   }
 }
 
@@ -4729,7 +4846,7 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
 
   if (!bundled || bundle_idx == media_idx) {
     if (stream->rtxsend || stream->rtxreceive) {
-      _set_rtx_ptmap_from_stream (webrtc, stream);
+      _set_internal_rtpbin_element_props_from_stream (webrtc, stream);
     }
 
     g_object_set (stream, "dtls-client",
@@ -6170,85 +6287,55 @@ unknown_session:
   }
 }
 
-static gboolean
-_merge_structure (GQuark field_id, const GValue * value, gpointer user_data)
-{
-  GstStructure *s = user_data;
-
-  gst_structure_id_set_value (s, field_id, value);
-
-  return TRUE;
-}
-
 static GstElement *
 on_rtpbin_request_aux_sender (GstElement * rtpbin, guint session_id,
     GstWebRTCBin * webrtc)
 {
   TransportStream *stream;
-  gboolean have_rtx = FALSE;
-  GstStructure *pt_map = NULL;
-  GstElement *ret = NULL;
+  GstElement *ret, *rtx;
+  GstPad *pad;
+  char *name;
 
   stream = _find_transport_for_session (webrtc, session_id);
-
-  if (stream)
-    have_rtx = transport_stream_get_pt (stream, "RTX") != 0;
-
-  GST_LOG_OBJECT (webrtc, "requesting aux sender for stream %" GST_PTR_FORMAT
-      " with pt map %" GST_PTR_FORMAT, stream, pt_map);
-
-  if (have_rtx) {
-    GstElement *rtx;
-    GstPad *pad;
-    gchar *name;
-    GstStructure *merged_local_rtx_ssrc_map =
-        gst_structure_new_empty ("application/x-rtp-ssrc-map");
-    guint i;
-
-    if (stream->rtxsend) {
-      GST_WARNING_OBJECT (webrtc, "rtprtxsend already created! rtpbin bug?!");
-      goto out;
-    }
-
-    GST_INFO ("creating AUX sender");
-    ret = gst_bin_new (NULL);
-    rtx = gst_element_factory_make ("rtprtxsend", NULL);
-    g_object_set (rtx, "max-size-packets", 500, NULL);
-    _set_rtx_ptmap_from_stream (webrtc, stream);
-
-    for (i = 0; i < webrtc->priv->transceivers->len; i++) {
-      WebRTCTransceiver *trans =
-          WEBRTC_TRANSCEIVER (g_ptr_array_index (webrtc->priv->transceivers,
-              i));
-
-      if (trans->stream == stream && trans->local_rtx_ssrc_map)
-        gst_structure_foreach (trans->local_rtx_ssrc_map,
-            _merge_structure, merged_local_rtx_ssrc_map);
-    }
-
-    g_object_set (rtx, "ssrc-map", merged_local_rtx_ssrc_map, NULL);
-    gst_structure_free (merged_local_rtx_ssrc_map);
-
-    gst_bin_add (GST_BIN (ret), rtx);
-
-    pad = gst_element_get_static_pad (rtx, "src");
-    name = g_strdup_printf ("src_%u", session_id);
-    gst_element_add_pad (ret, gst_ghost_pad_new (name, pad));
-    g_free (name);
-    gst_object_unref (pad);
-
-    pad = gst_element_get_static_pad (rtx, "sink");
-    name = g_strdup_printf ("sink_%u", session_id);
-    gst_element_add_pad (ret, gst_ghost_pad_new (name, pad));
-    g_free (name);
-    gst_object_unref (pad);
-
-    stream->rtxsend = gst_object_ref (rtx);
+  if (!stream) {
+    /* a rtp session without a stream is a webrtcbin bug */
+    g_warn_if_reached ();
+    return NULL;
   }
 
-out:
-  if (pt_map)
-    gst_structure_free (pt_map);
+  if (stream->rtxsend) {
+    GST_WARNING_OBJECT (webrtc, "rtprtxsend already created! rtpbin bug?!");
+    g_warn_if_reached ();
+    return NULL;
+  }
+
+  GST_DEBUG_OBJECT (webrtc, "requesting aux sender for session %u "
+      "stream %" GST_PTR_FORMAT, session_id, stream);
+
+  ret = gst_bin_new (NULL);
+  rtx = gst_element_factory_make ("rtprtxsend", NULL);
+  /* XXX: allow control from outside? */
+  g_object_set (rtx, "max-size-packets", 500, NULL);
+
+  stream->rtxsend = gst_object_ref (rtx);
+  _set_internal_rtpbin_element_props_from_stream (webrtc, stream);
+
+  if (!gst_bin_add (GST_BIN (ret), rtx))
+    g_warn_if_reached ();
+
+  name = g_strdup_printf ("src_%u", session_id);
+  pad = gst_element_get_static_pad (rtx, "src");
+  if (!gst_element_add_pad (ret, gst_ghost_pad_new (name, pad)))
+    g_warn_if_reached ();
+  gst_clear_object (&pad);
+  g_clear_pointer (&name, g_free);
+
+  name = g_strdup_printf ("sink_%u", session_id);
+  pad = gst_element_get_static_pad (rtx, "sink");
+  if (!gst_element_add_pad (ret, gst_ghost_pad_new (name, pad)))
+    g_warn_if_reached ();
+  gst_clear_object (&pad);
+  g_clear_pointer (&name, g_free);
 
   return ret;
 }
@@ -6257,85 +6344,68 @@ static GstElement *
 on_rtpbin_request_aux_receiver (GstElement * rtpbin, guint session_id,
     GstWebRTCBin * webrtc)
 {
-  GstElement *ret = NULL;
-  GstElement *prev = NULL;
-  GstPad *sinkpad = NULL;
   TransportStream *stream;
-  gint red_pt = 0;
-  gint rtx_pt = 0;
+  GstPad *pad, *ghost;
+  GstElement *ret;
+  char *name;
 
   stream = _find_transport_for_session (webrtc, session_id);
-
-  if (stream) {
-    red_pt = transport_stream_get_pt (stream, "RED");
-    rtx_pt = transport_stream_get_pt (stream, "RTX");
+  if (!stream) {
+    /* no transport stream before the session has been created is a webrtcbin
+     * programming error! */
+    g_warn_if_reached ();
+    return NULL;
   }
 
-  GST_LOG_OBJECT (webrtc, "requesting aux receiver for stream %" GST_PTR_FORMAT,
-      stream);
-
-  if (red_pt || rtx_pt)
-    ret = gst_bin_new (NULL);
-
-  if (rtx_pt) {
-    if (stream->rtxreceive) {
-      GST_WARNING_OBJECT (webrtc,
-          "rtprtxreceive already created! rtpbin bug?!");
-      goto error;
-    }
-
-    stream->rtxreceive = gst_element_factory_make ("rtprtxreceive", NULL);
-    _set_rtx_ptmap_from_stream (webrtc, stream);
-
-    gst_bin_add (GST_BIN (ret), stream->rtxreceive);
-
-    sinkpad = gst_element_get_static_pad (stream->rtxreceive, "sink");
-
-    prev = gst_object_ref (stream->rtxreceive);
+  if (stream->rtxreceive) {
+    GST_WARNING_OBJECT (webrtc, "rtprtxreceive already created! rtpbin bug?!");
+    g_warn_if_reached ();
+    return NULL;
   }
 
-  if (red_pt) {
-    GstElement *rtpreddec = gst_element_factory_make ("rtpreddec", NULL);
-
-    GST_DEBUG_OBJECT (webrtc, "Creating RED decoder for pt %d in session %u",
-        red_pt, session_id);
-
-    gst_bin_add (GST_BIN (ret), rtpreddec);
-
-    g_object_set (rtpreddec, "pt", red_pt, NULL);
-
-    if (prev)
-      gst_element_link (prev, rtpreddec);
-    else
-      sinkpad = gst_element_get_static_pad (rtpreddec, "sink");
-
-    prev = rtpreddec;
+  if (stream->reddec) {
+    GST_WARNING_OBJECT (webrtc, "rtpreddec already created! rtpbin bug?!");
+    g_warn_if_reached ();
+    return NULL;
   }
 
-  if (sinkpad) {
-    gchar *name = g_strdup_printf ("sink_%u", session_id);
-    GstPad *ghost = gst_ghost_pad_new (name, sinkpad);
-    g_free (name);
-    gst_object_unref (sinkpad);
-    gst_element_add_pad (ret, ghost);
-  }
+  GST_DEBUG_OBJECT (webrtc, "requesting aux receiver for session %u "
+      "stream %" GST_PTR_FORMAT, session_id, stream);
 
-  if (prev) {
-    gchar *name = g_strdup_printf ("src_%u", session_id);
-    GstPad *srcpad = gst_element_get_static_pad (prev, "src");
-    GstPad *ghost = gst_ghost_pad_new (name, srcpad);
-    g_free (name);
-    gst_object_unref (srcpad);
-    gst_element_add_pad (ret, ghost);
-  }
+  ret = gst_bin_new (NULL);
 
-out:
+  stream->rtxreceive = gst_element_factory_make ("rtprtxreceive", NULL);
+  gst_object_ref (stream->rtxreceive);
+  if (!gst_bin_add (GST_BIN (ret), stream->rtxreceive))
+    g_warn_if_reached ();
+
+  stream->reddec = gst_element_factory_make ("rtpreddec", NULL);
+  gst_object_ref (stream->reddec);
+  if (!gst_bin_add (GST_BIN (ret), stream->reddec))
+    g_warn_if_reached ();
+
+  _set_internal_rtpbin_element_props_from_stream (webrtc, stream);
+
+  if (!gst_element_link (stream->rtxreceive, stream->reddec))
+    g_warn_if_reached ();
+
+  name = g_strdup_printf ("sink_%u", session_id);
+  pad = gst_element_get_static_pad (stream->rtxreceive, "sink");
+  ghost = gst_ghost_pad_new (name, pad);
+  g_clear_pointer (&name, g_free);
+  gst_clear_object (&pad);
+  if (!gst_element_add_pad (ret, ghost))
+    g_warn_if_reached ();
+
+  name = g_strdup_printf ("src_%u", session_id);
+  pad = gst_element_get_static_pad (stream->reddec, "src");
+  ghost = gst_ghost_pad_new (name, pad);
+  g_clear_pointer (&name, g_free);
+  gst_clear_object (&pad);
+  if (!gst_element_add_pad (ret, ghost))
+    g_warn_if_reached ();
+
   return ret;
-
-error:
-  if (ret)
-    gst_object_unref (ret);
-  goto out;
 }
 
 static GstElement *
@@ -6348,6 +6418,11 @@ on_rtpbin_request_fec_decoder (GstElement * rtpbin, guint session_id,
   GObject *internal_storage;
 
   stream = _find_transport_for_session (webrtc, session_id);
+  if (!stream) {
+    /* a rtp session without a stream is a webrtcbin bug */
+    g_warn_if_reached ();
+    return NULL;
+  }
 
   /* TODO: for now, we only support ulpfec, but once we support
    * more algorithms, if the remote may use more than one algorithm,
@@ -6355,23 +6430,22 @@ on_rtpbin_request_fec_decoder (GstElement * rtpbin, guint session_id,
    *
    * + Return a bin here, with the relevant FEC decoders plugged in
    *   and their payload type set to 0
-   * + Enable the decoders by setting the payload type only when
-   *   we detect it (by connecting to ptdemux:new-payload-type for
-   *   example)
    */
-  if (stream)
-    pt = transport_stream_get_pt (stream, "ULPFEC");
 
-  if (pt) {
-    GST_DEBUG_OBJECT (webrtc, "Creating ULPFEC decoder for pt %d in session %u",
-        pt, session_id);
-    ret = gst_element_factory_make ("rtpulpfecdec", NULL);
-    g_signal_emit_by_name (webrtc->rtpbin, "get-internal-storage", session_id,
-        &internal_storage);
+  GST_DEBUG_OBJECT (webrtc, "Creating ULPFEC decoder for pt %d in session %u "
+      "stream %" GST_PTR_FORMAT, pt, session_id, stream);
 
-    g_object_set (ret, "pt", pt, "storage", internal_storage, NULL);
-    g_object_unref (internal_storage);
-  }
+  ret = gst_element_factory_make ("rtpulpfecdec", NULL);
+  g_signal_emit_by_name (webrtc->rtpbin, "get-internal-storage", session_id,
+      &internal_storage);
+
+  g_object_set (ret, "storage", internal_storage, NULL);
+  g_clear_object (&internal_storage);
+
+  PC_LOCK (webrtc);
+  stream->fecdecs = g_list_prepend (stream->fecdecs, gst_object_ref (ret));
+  _set_internal_rtpbin_element_props_from_stream (webrtc, stream);
+  PC_UNLOCK (webrtc);
 
   return ret;
 }
@@ -6380,80 +6454,56 @@ static GstElement *
 on_rtpbin_request_fec_encoder (GstElement * rtpbin, guint session_id,
     GstWebRTCBin * webrtc)
 {
-  GstElement *ret = NULL;
-  GstElement *prev = NULL;
+  GstElement *ret;
   TransportStream *stream;
-  guint ulpfec_pt = 0;
-  guint red_pt = 0;
-  GstPad *sinkpad = NULL;
-  GstWebRTCRTPTransceiver *trans;
+  GstPad *pad, *ghost;
 
   stream = _find_transport_for_session (webrtc, session_id);
-  trans = _find_transceiver (webrtc, &session_id,
-      (FindTransceiverFunc) transceiver_match_for_mline);
 
-  if (stream) {
-    ulpfec_pt = transport_stream_get_pt (stream, "ULPFEC");
-    red_pt = transport_stream_get_pt (stream, "RED");
+  if (!stream) {
+    /* rtp session without a stream is webrtcbin bug */
+    g_warn_if_reached ();
+    return NULL;
   }
 
-  if (ulpfec_pt || red_pt)
-    ret = gst_bin_new (NULL);
-
-  if (ulpfec_pt) {
-    GstElement *fecenc = gst_element_factory_make ("rtpulpfecenc", NULL);
-    GstCaps *caps = transport_stream_get_caps_for_pt (stream, ulpfec_pt);
-
-    GST_DEBUG_OBJECT (webrtc,
-        "Creating ULPFEC encoder for session %d with pt %d", session_id,
-        ulpfec_pt);
-
-    gst_bin_add (GST_BIN (ret), fecenc);
-    sinkpad = gst_element_get_static_pad (fecenc, "sink");
-    g_object_set (fecenc, "pt", ulpfec_pt, "percentage",
-        WEBRTC_TRANSCEIVER (trans)->fec_percentage, NULL);
-
-
-    if (caps && !gst_caps_is_empty (caps)) {
-      const GstStructure *s = gst_caps_get_structure (caps, 0);
-      const gchar *media = gst_structure_get_string (s, "media");
-
-      if (!g_strcmp0 (media, "video"))
-        g_object_set (fecenc, "multipacket", TRUE, NULL);
-    }
-
-    prev = fecenc;
+  if (stream->ulpfecenc) {
+    GST_WARNING_OBJECT (webrtc, "rtpulpfecenc already created! rtpbin bug?!");
+    g_warn_if_reached ();
+    return NULL;
+  }
+  if (stream->redenc) {
+    GST_WARNING_OBJECT (webrtc, "rtpulpfecenc already created! rtpbin bug?!");
+    g_warn_if_reached ();
+    return NULL;
   }
 
-  if (red_pt) {
-    GstElement *redenc = gst_element_factory_make ("rtpredenc", NULL);
+  GST_DEBUG_OBJECT (webrtc, "Requesting FEC encoder for session %d "
+      "stream %" GST_PTR_FORMAT, session_id, stream);
 
-    GST_DEBUG_OBJECT (webrtc, "Creating RED encoder for session %d with pt %d",
-        session_id, red_pt);
+  ret = gst_bin_new (NULL);
 
-    gst_bin_add (GST_BIN (ret), redenc);
-    if (prev)
-      gst_element_link (prev, redenc);
-    else
-      sinkpad = gst_element_get_static_pad (redenc, "sink");
+  stream->ulpfecenc = gst_element_factory_make ("rtpulpfecenc", NULL);
+  if (!gst_bin_add (GST_BIN (ret), gst_object_ref (stream->ulpfecenc)))
+    g_warn_if_reached ();
 
-    g_object_set (redenc, "pt", red_pt, "allow-no-red-blocks", TRUE, NULL);
+  stream->redenc = gst_element_factory_make ("rtpredenc", NULL);
+  if (!gst_bin_add (GST_BIN (ret), gst_object_ref (stream->redenc)))
+    g_warn_if_reached ();
 
-    prev = redenc;
-  }
+  _set_internal_rtpbin_element_props_from_stream (webrtc, stream);
 
-  if (sinkpad) {
-    GstPad *ghost = gst_ghost_pad_new ("sink", sinkpad);
-    gst_object_unref (sinkpad);
-    gst_element_add_pad (ret, ghost);
-  }
+  if (!gst_element_link (stream->ulpfecenc, stream->redenc))
+    g_warn_if_reached ();
 
-  if (prev) {
-    GstPad *srcpad = gst_element_get_static_pad (prev, "src");
-    GstPad *ghost = gst_ghost_pad_new ("src", srcpad);
-    gst_object_unref (srcpad);
-    gst_element_add_pad (ret, ghost);
-  }
+  pad = gst_element_get_static_pad (stream->ulpfecenc, "sink");
+  ghost = gst_ghost_pad_new ("sink", pad);
+  gst_clear_object (&pad);
+  gst_element_add_pad (ret, ghost);
+
+  pad = gst_element_get_static_pad (stream->redenc, "src");
+  ghost = gst_ghost_pad_new ("src", pad);
+  gst_clear_object (&pad);
+  gst_element_add_pad (ret, ghost);
 
   return ret;
 }
