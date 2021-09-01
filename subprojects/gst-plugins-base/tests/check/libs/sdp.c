@@ -145,6 +145,20 @@ static const gchar caps_video_extmap_pt_100[] =
     "extmap-3=(string)<\"recvonly\",\"http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\",\"\">, "
     "extmap-4=(string)<\"\",\"urn:3gpp:video-orientation\",\"attributes\">";
 
+static const gchar caps_multiple_rid[] =
+    "application/x-unknown, media=(string)video, payload=(int)96, "
+    "clock-rate=(int)90000, encoding-name=(string)VP8, "
+    "rid-h=(string)\"send\", "
+    "rid-m=(string)\"send\", "
+    "rid-l=(string)\"send\", "
+    "a-simulcast=(string)\"send\\ h\\;m\\;l\"";
+
+static const gchar caps_rid_params[] =
+    "application/x-unknown, media=(string)video, payload=(int)96, "
+    "clock-rate=(int)90000, encoding-name=(string)VP8, "
+    "rid-0=(string)<\"send\",\"max-width=1920\",\"max-height=1080\">, "
+    "rid-1=(string)<\"send\",\"max-width=1280\",\"max-height=720\">";
+
 /* *INDENT-ON* */
 
 GST_START_TEST (boxed)
@@ -658,6 +672,132 @@ GST_START_TEST (caps_from_media_really_const)
 }
 
 GST_END_TEST
+GST_START_TEST (caps_multiple_rid_parse)
+{
+  GstSDPMedia media, media2;
+  GstCaps *caps, *expected;
+
+  /* BUG: gst_sdp_media_add_attributes_to_caps() would only set a single rid
+   * string attribute key/value in caps */
+
+  memset (&media, 0, sizeof (media));
+  fail_unless_equals_int (gst_sdp_media_init (&media), GST_SDP_OK);
+
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_set_media (&media, "video"));
+  fail_unless_equals_int (GST_SDP_OK, gst_sdp_media_add_format (&media, "96"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "rtpmap", "96 VP8/90000"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "rid", "h send"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "rid", "m send"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "rid", "l send"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "simulcast", "send h;m;l"));
+
+  expected = gst_caps_from_string (caps_multiple_rid);
+  fail_unless (gst_caps_is_fixed (expected));
+  fail_unless (expected != NULL);
+
+  caps = gst_sdp_media_get_caps_from_media (&media, 96);
+  fail_unless (caps != NULL);
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_attributes_to_caps (&media, caps));
+  fail_unless (gst_caps_is_fixed (caps));
+
+  GST_DEBUG ("    caps %" GST_PTR_FORMAT, caps);
+  GST_DEBUG ("expected %" GST_PTR_FORMAT, expected);
+  fail_unless (gst_caps_is_equal (caps, expected));
+
+  memset (&media2, 0, sizeof (media2));
+  fail_unless_equals_int (GST_SDP_OK, gst_sdp_media_init (&media2));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_set_media_from_caps (caps, &media2));
+
+  gst_clear_caps (&caps);
+
+  caps = gst_sdp_media_get_caps_from_media (&media, 96);
+  fail_unless (caps != NULL);
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_attributes_to_caps (&media, caps));
+  fail_unless (gst_caps_is_fixed (caps));
+
+  GST_DEBUG ("    caps %" GST_PTR_FORMAT, caps);
+  GST_DEBUG ("expected %" GST_PTR_FORMAT, expected);
+  fail_unless (gst_caps_is_equal (caps, expected));
+
+  gst_sdp_media_uninit (&media);
+  gst_sdp_media_uninit (&media2);
+
+  gst_clear_caps (&caps);
+  gst_clear_caps (&expected);
+}
+
+GST_END_TEST
+GST_START_TEST (caps_multiple_rid_parse_with_params)
+{
+  GstSDPMedia media, media2;
+  GstCaps *caps, *expected;
+
+  /* BUG: gst_sdp_media_add_attributes_to_caps() would only set a single rid
+   * string attribute key/value in caps */
+
+  memset (&media, 0, sizeof (media));
+  fail_unless_equals_int (gst_sdp_media_init (&media), GST_SDP_OK);
+
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_set_media (&media, "video"));
+  fail_unless_equals_int (GST_SDP_OK, gst_sdp_media_add_format (&media, "96"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "rtpmap", "96 VP8/90000"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "rid",
+          "0 send max-width=1920;max-height=1080"));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_add_attribute (&media, "rid",
+          "1 send max-width=1280;max-height=720"));
+
+  expected = gst_caps_from_string (caps_rid_params);
+  fail_unless (gst_caps_is_fixed (expected));
+  fail_unless (expected != NULL);
+
+  caps = gst_sdp_media_get_caps_from_media (&media, 96);
+  fail_unless (caps != NULL);
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_attributes_to_caps (&media, caps));
+  fail_unless (gst_caps_is_fixed (caps));
+
+  GST_DEBUG ("    caps %" GST_PTR_FORMAT, caps);
+  GST_DEBUG ("expected %" GST_PTR_FORMAT, expected);
+  fail_unless (gst_caps_is_equal (caps, expected));
+
+  memset (&media2, 0, sizeof (media2));
+  fail_unless_equals_int (GST_SDP_OK, gst_sdp_media_init (&media2));
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_set_media_from_caps (caps, &media2));
+
+  gst_clear_caps (&caps);
+
+  caps = gst_sdp_media_get_caps_from_media (&media, 96);
+  fail_unless (caps != NULL);
+  fail_unless_equals_int (GST_SDP_OK,
+      gst_sdp_media_attributes_to_caps (&media, caps));
+  fail_unless (gst_caps_is_fixed (caps));
+
+  GST_DEBUG ("    caps %" GST_PTR_FORMAT, caps);
+  GST_DEBUG ("expected %" GST_PTR_FORMAT, expected);
+  fail_unless (gst_caps_is_equal (caps, expected));
+
+  gst_sdp_media_uninit (&media);
+  gst_sdp_media_uninit (&media2);
+
+  gst_clear_caps (&caps);
+  gst_clear_caps (&expected);
+}
+
+GST_END_TEST
 /*
  * End of test cases
  */
@@ -681,6 +821,8 @@ sdp_suite (void)
   tcase_add_test (tc_chain, media_from_caps_rtcp_fb_pt_100);
   tcase_add_test (tc_chain, media_from_caps_rtcp_fb_pt_101);
   tcase_add_test (tc_chain, media_from_caps_extmap_pt_100);
+  tcase_add_test (tc_chain, caps_multiple_rid_parse);
+  tcase_add_test (tc_chain, caps_multiple_rid_parse_with_params);
 
   return s;
 }
