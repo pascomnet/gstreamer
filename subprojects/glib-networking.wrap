@@ -1,5 +1,5 @@
 [wrap-git]
 directory=glib-networking
-url=git@github.com:pascomnet/glib-networking.git
+url=https://github.com/pascomnet/glib-networking.git
 push-url=git@github.com:pascomnet/glib-networking.git
 revision=2.68.2_pascom
