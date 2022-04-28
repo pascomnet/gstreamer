@@ -1,5 +1,5 @@
 [wrap-git]
 directory=glib-networking
-url=https://gitlab.gnome.org/GNOME/glib-networking.git
-push-url=git@gitlab.gnome.org:GNOME/glib-networking.git
-revision=2.68.2
+url=git@github.com:pascomnet/glib-networking.git
+push-url=git@github.com:pascomnet/glib-networking.git
+revision=2.68.2_pascom

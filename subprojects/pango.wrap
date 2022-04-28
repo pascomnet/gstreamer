@@ -1,4 +1,4 @@
 [wrap-git]
-url=https://gitlab.gnome.org/GNOME/pango.git
-push-url=git@gitlab.gnome.org:GNOME/pango.git
-revision=1.48.7
+url=https://github.com/pascomnet/pango.git
+push-url=git@github.com:pascomnet/pango.git
+revision=1.48.7_pascom
