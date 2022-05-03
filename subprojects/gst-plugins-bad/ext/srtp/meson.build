@@ -11,7 +11,7 @@ if get_option('srtp').disabled()
   subdir_done()
 endif
 
-srtp_dep = dependency('libsrtp2', version : '>= 2.1.0', required : false)
+srtp_dep = dependency('libsrtp2', version : '>= 2.1.0', required : get_option('srtp'), fallback: ['libsrtp2', 'libsrtp2_dep'])
 if srtp_dep.found()
   srtp_cargs += ['-DHAVE_SRTP2']
 else
