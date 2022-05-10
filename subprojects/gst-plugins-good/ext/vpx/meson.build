@@ -18,7 +18,17 @@ vpx_features = [
 ]
 
 vpx_option = get_option('vpx')
-vpx_dep = dependency('vpx', version : '>=1.7.0', required : vpx_option)
+
+vpx_inc = include_directories('.')
+if cc.get_id() == 'msvc'
+  # CL-2812 workaround for getting things build and link on windows
+  vpx_inc = include_directories('C:\\Dev\\libvpx')
+  vpx_dep = declare_dependency(link_args : ['/LIBPATH:C:\\Dev\\build_libvpx\\x64\\Release', 'vpxmd.lib'],
+    include_directories : vpx_inc,
+    version : '1.11.0')
+else
+  vpx_dep = dependency('vpx', version : '>=1.7.0', required : vpx_option)
+endif
 
 if vpx_dep.found()
   vpx_args = []
@@ -31,7 +41,7 @@ if vpx_dep.found()
                      const vpx_codec_iface_t *c = &@1@;
                      return c != 0;
                    }'''.format(header,codec_iface)
-    if cc.links(link_code, dependencies : vpx_dep)
+    if cc.links(link_code, dependencies : vpx_dep, include_directories : vpx_inc)
       vpx_args += extra_define
       message('libvpx provides @0@ interface (@1@)'.format(f.get(3),f.get(1)))
       have_vpx_feature = true
@@ -67,7 +77,7 @@ if vpx_dep.found()
   gstvpx = library('gstvpx',
     vpx_sources, gstvpx_enums,
     c_args : gst_plugins_good_args + vpx_args,
-    include_directories : [configinc],
+    include_directories : [configinc, vpx_inc],
     dependencies : [gstbase_dep, gsttag_dep, gstvideo_dep, vpx_dep],
     install : true,
     install_dir : plugins_install_dir,
