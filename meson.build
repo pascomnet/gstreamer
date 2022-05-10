@@ -30,7 +30,7 @@ if cmdres.returncode() != 0
 endif
 
 # Install gst-indent pre-commit hook
-run_command(python3, '-c', 'import shutil; shutil.copy("scripts/git-hooks/multi-pre-commit.hook", ".git/hooks/pre-commit")')
+#run_command(python3, '-c', 'import shutil; shutil.copy("scripts/git-hooks/multi-pre-commit.hook", ".git/hooks/pre-commit")')
 
 # Ensure that the user does not have Strawberry Perl in PATH, since it ships
 # with a pkg-config.bat and broken pkgconfig files for libffi and zlib. Will
@@ -109,7 +109,7 @@ if build_system == 'windows'
   subproject('win-flex-bison-binaries')
   subproject('win-nasm')
   # CL-2812 on windows we can use OpenSSL from Qt instead of compiling it on our own
-  subproject('openssl')
+  subproject('win-openssl-qt')
 elif build_system == 'darwin'
   subproject('macos-bison-binary')
 endif
