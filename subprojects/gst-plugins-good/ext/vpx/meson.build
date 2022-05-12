@@ -22,6 +22,7 @@ vpx_option = get_option('vpx')
 vpx_inc = include_directories('.')
 if cc.get_id() == 'msvc'
   # CL-2812 workaround for getting things build and link on windows
+  # defining vpx_inc and explicitly passing it everywhere seems to be required when using declare_dependency, most likely related to: https://github.com/mesonbuild/meson/issues/9551#issuecomment-965451863
   vpx_inc = include_directories('C:\\Dev\\libvpx')
   vpx_dep = declare_dependency(link_args : ['/LIBPATH:C:\\Dev\\build_libvpx\\x64\\Release', 'vpxmd.lib'],
     include_directories : vpx_inc,
