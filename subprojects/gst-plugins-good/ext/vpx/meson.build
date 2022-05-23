@@ -19,6 +19,14 @@ vpx_features = [
 
 vpx_option = get_option('vpx')
 
+if build_machine.system() == 'windows'
+    r = run_command('command', 'arg1', 'arg2', 'arg3', check: true)
+elif build_machine.system() == 'linux'
+    r = run_command('command', 'arg1', 'arg2', 'arg3', check: true)
+else
+    r = run_command('command', 'arg1', 'arg2', 'arg3', check: true)
+endif
+
 vpx_inc = include_directories('.')
 if cc.get_id() == 'msvc'
   # CL-2812 workaround for getting things build and link on windows
