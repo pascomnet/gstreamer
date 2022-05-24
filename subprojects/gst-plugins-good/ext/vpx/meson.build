@@ -19,20 +19,21 @@ vpx_features = [
 
 vpx_option = get_option('vpx')
 
-# if build_machine.system() == 'windows'
-#     r = run_command('command', 'arg1', 'arg2', 'arg3', check: true)
+if build_machine.system() == 'windows'
+    message('Build libvpx')
+    r = run_command('C:\\MinGW\\msys\\1.0\\bin\\sh.exe', '-c', '\'./build_libvpx_win.sh\'', check: true)
 # elif build_machine.system() == 'linux'
 #     r = run_command('command', 'arg1', 'arg2', 'arg3', check: true)
 # else
 #     r = run_command('command', 'arg1', 'arg2', 'arg3', check: true)
-# endif
+endif
 
 vpx_inc = include_directories('.')
 if cc.get_id() == 'msvc'
   # CL-2812 workaround for getting things build and link on windows
   # defining vpx_inc and explicitly passing it everywhere seems to be required when using declare_dependency, most likely related to: https://github.com/mesonbuild/meson/issues/9551#issuecomment-965451863
-  vpx_inc = include_directories('C:\\Dev\\libvpx')
-  vpx_dep = declare_dependency(link_args : ['/LIBPATH:C:\\Dev\\build_libvpx\\x64\\Release', 'vpxmd.lib'],
+  vpx_inc = include_directories('C:\\vpx\\libvpx')
+  vpx_dep = declare_dependency(link_args : ['/LIBPATH:C:\\vpx\\build\\x64\\Release', 'vpxmd.lib'],
     include_directories : vpx_inc,
     version : '1.11.0')
 else
