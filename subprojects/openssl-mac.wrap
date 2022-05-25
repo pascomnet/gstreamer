@@ -11,4 +11,3 @@ patch_hash = a0cb8285cda3ae0e1898b4e88427c19bf245184259f41395010182655f9f8ce6
 libcrypto = libcrypto_dep
 libssl = libssl_dep
 openssl = openssl_dep
-
