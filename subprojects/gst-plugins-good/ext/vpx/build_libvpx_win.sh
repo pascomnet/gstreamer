@@ -2,6 +2,8 @@
 
 export PATH=/usr/local/bin:/mingw/bin:/bin:$PATH
 
+mkdir /tmp
+
 cd /c
 mkdir -p vpx
 cd vpx
