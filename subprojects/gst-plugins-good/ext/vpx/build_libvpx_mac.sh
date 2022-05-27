@@ -22,8 +22,7 @@ _conf=(
     --enable-vp9-postproc --disable-tools --disable-examples --disable-docs
 )
 
-../"libvpx-$v"/configure "${_conf[@]}"
+arch -x86_64 ../"libvpx-$v"/configure "${_conf[@]}"
 
-make && make install
-
-sed -i 's/^\(Libs:.*\)$/\1 -lpthread/' "$installdir"/lib/pkgconfig/vpx.pc
+arch -x86_64 make
+arch -x86_64 make install
