@@ -28,8 +28,8 @@ if build_machine.system() == 'windows'
     r = run_command('C:\\MinGW\\msys\\1.0\\bin\\sh.exe', '-c', '\'./build_libvpx_win.sh\'', check: true)
 elif build_machine.system() == 'linux'
     r = run_command(meson.current_source_dir() / 'build_libvpx_linux.sh', vpx_builddir, vpx_installdir, check: true)
-else
-    r = run_command('foo', 'bar', 'baz', '42', check: true)
+elif build_machine.system() == 'darwin'
+    r = run_command(meson.current_source_dir() / 'build_libvpx_mac.sh', vpx_builddir, vpx_installdir, check: true)
 endif
 
 vpx_inc = include_directories('.')
