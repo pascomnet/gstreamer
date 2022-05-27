@@ -2,7 +2,7 @@
 set -euo pipefail
 
 builddir="$1"
-installdir=$(readlink -sm "$2")
+installdir="$2"
 
 rm -rf "$builddir"
 mkdir -p "$builddir"
