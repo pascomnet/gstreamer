@@ -42,7 +42,7 @@ curl -sfL "https://github.com/webmproject/libvpx/archive/refs/tags/v${v}.tar.gz"
 
 tar xf "libvpx-v$v.tar.gz"
 
-mv "libvpx-v$v" libvpx
+mv "libvpx-$v" libvpx
 
 mkdir build && cd build
 
