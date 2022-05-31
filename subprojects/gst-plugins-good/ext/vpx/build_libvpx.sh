@@ -42,6 +42,8 @@ curl -sfL "https://github.com/webmproject/libvpx/archive/refs/tags/v${v}.tar.gz"
 
 tar xf "libvpx-v$v.tar.gz"
 
+mv "libvpx-v$v" libvpx
+
 mkdir build && cd build
 
 _conf=( )
@@ -61,7 +63,7 @@ _conf+=(
 
 echo "configure args: ${_conf[*]}"
 
-arch_run ../"libvpx-$v"/configure "${_conf[@]}"
+arch_run ../libvpx/configure "${_conf[@]}"
 arch_run make
 
 if (( unix )); then
