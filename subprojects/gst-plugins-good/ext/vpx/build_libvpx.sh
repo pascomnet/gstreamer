@@ -8,6 +8,14 @@ installdir=${3:-}  # unset in windows invocation
 arch_run() { "$@"; }
 unix=1
 
+echo "------- vpx build -------"
+echo "platform: $platform"
+echo "builddir: $builddir"
+echo "installdir: $installdir"
+echo "unix: $unix"
+echo "PATH: $PATH"
+echo "perl found? $(command -v perl || :)"
+
 case $platform in
      win)
          unix=0
@@ -19,6 +27,9 @@ case $platform in
          arch_run() { arch -x86_64 "$@"; }
          ;;
      linux)
+         ;;
+     *)
+         echo "Invalid platform: $platform"
          ;;
 esac
 
