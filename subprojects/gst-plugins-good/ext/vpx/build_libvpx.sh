@@ -2,8 +2,8 @@
 set -euo pipefail
 
 platform=$1
-builddir=$2
-installdir=$3
+builddir=${2:-}    # unset in windows invocation
+installdir=${3:-}  # unset in windows invocation
 
 arch_run() { "$@"; }
 unix=1
