@@ -1,20 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-platform=$1
+platform=${1:-win}
 builddir=${2:-}    # unset in windows invocation
 installdir=${3:-}  # unset in windows invocation
 
 arch_run() { "$@"; }
 unix=1
-
-echo "------- vpx build -------"
-echo "platform: $platform"
-echo "builddir: $builddir"
-echo "installdir: $installdir"
-echo "unix: $unix"
-echo "PATH: $PATH"
-echo "perl found? $(command -v perl || :)"
 
 case $platform in
      win)
@@ -32,6 +24,14 @@ case $platform in
          echo "Invalid platform: $platform"
          ;;
 esac
+
+echo "------- vpx build -------"
+echo "platform: $platform"
+echo "builddir: $builddir"
+echo "installdir: $installdir"
+echo "unix: $unix"
+echo "PATH: $PATH"
+echo "perl found? $(command -v perl || :)"
 
 rm -rf "$builddir"
 mkdir -p "$builddir"
@@ -58,6 +58,8 @@ _conf+=(
     --enable-temporal-denoising --enable-vp9-temporal-denoising
     --enable-vp9-postproc --disable-tools --disable-examples --disable-docs
 )
+
+echo "configure args: ${_conf[*]}"
 
 arch_run ../"libvpx-$v"/configure "${_conf[@]}"
 arch_run make
