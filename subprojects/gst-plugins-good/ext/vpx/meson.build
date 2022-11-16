@@ -18,7 +18,31 @@ vpx_features = [
 ]
 
 vpx_option = get_option('vpx')
-vpx_dep = dependency('vpx', version : '>=1.7.0', required : vpx_option)
+root_dir = meson.global_source_root()
+vpx_builddir = meson.global_build_root() / 'libvpx-build'
+vpx_installdir = meson.global_build_root() / 'libvpx'
+
+message('Build libvpx')
+
+if build_machine.system() == 'windows'
+    r = run_command('C:\\MinGW\\msys\\1.0\\bin\\bash.exe', './build_libvpx.sh', check: true)
+elif build_machine.system() == 'linux'
+    r = run_command(meson.current_source_dir() / 'build_libvpx.sh', 'linux', vpx_builddir, vpx_installdir, check: true)
+elif build_machine.system() == 'darwin'
+    r = run_command(meson.current_source_dir() / 'build_libvpx.sh', 'mac', vpx_builddir, vpx_installdir, check: true)
+endif
+
+vpx_inc = include_directories('.')
+if cc.get_id() == 'msvc'
+  # CL-2812 workaround for getting things build and link on windows
+  # defining vpx_inc and explicitly passing it everywhere seems to be required when using declare_dependency, most likely related to: https://github.com/mesonbuild/meson/issues/9551#issuecomment-965451863
+  vpx_inc = include_directories('C:\\vpx\\libvpx')
+  vpx_dep = declare_dependency(link_args : ['/LIBPATH:C:\\vpx\\build\\x64\\Release', 'vpxmd.lib'],
+    include_directories : vpx_inc,
+    version : '1.11.0')
+else
+  vpx_dep = dependency('vpx', version : '>=1.7.0', required : vpx_option)
+endif
 
 if vpx_dep.found()
   vpx_args = []
@@ -31,7 +55,7 @@ if vpx_dep.found()
                      const vpx_codec_iface_t *c = &@1@;
                      return c != 0;
                    }'''.format(header,codec_iface)
-    if cc.links(link_code, dependencies : vpx_dep)
+    if cc.links(link_code, dependencies : vpx_dep, include_directories : vpx_inc)
       vpx_args += extra_define
       message('libvpx provides @0@ interface (@1@)'.format(f.get(3),f.get(1)))
       have_vpx_feature = true
@@ -67,7 +91,7 @@ if vpx_dep.found()
   gstvpx = library('gstvpx',
     vpx_sources, gstvpx_enums,
     c_args : gst_plugins_good_args + vpx_args,
-    include_directories : [configinc],
+    include_directories : [configinc, vpx_inc],
     dependencies : [gstbase_dep, gsttag_dep, gstvideo_dep, vpx_dep],
     install : true,
     install_dir : plugins_install_dir,
