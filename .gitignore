@@ -49,3 +49,6 @@ subprojects/*/
 !subprojects/macos-bison-binary
 !subprojects/win-flex-bison-binaries
 !subprojects/win-nasm
+
+dist/*
+gstreamer-1.0*.tar.gz
