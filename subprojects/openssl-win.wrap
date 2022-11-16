@@ -1,0 +1,9 @@
+[wrap-file]
+directory = openssl
+source_filename = openssl.zip
+
+[provide]
+libcrypto = libcrypto_dep
+libssl = libssl_dep
+openssl = openssl_dep
+
