@@ -1,8 +1,8 @@
 [wrap-git]
 directory=orc
-url=https://gitlab.freedesktop.org/gstreamer/orc.git
-push-url=git@gitlab.freedesktop.org:gstreamer/orc.git
-revision=0.4.33
+url=https://github.com/pascomnet/orc.git
+push-url=git@github.com:pascomnet/orc.git
+revision=d5b35c0cc74999bbf8bfc955b8fc6607ae332bb6
 
 [provide]
 orc-0.4 = orc_dep
