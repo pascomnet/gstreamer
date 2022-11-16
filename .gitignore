@@ -50,3 +50,6 @@ subprojects/*/
 !subprojects/win-flex-bison-binaries
 !subprojects/win-nasm
 !subprojects/packagefiles
+
+dist/*
+gstreamer-1.0*.tar.gz
