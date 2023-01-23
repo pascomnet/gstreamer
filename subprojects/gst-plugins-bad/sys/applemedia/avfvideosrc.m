@@ -163,7 +163,7 @@ gst_avf_video_source_device_type_get_type (void)
   GstPushSrc *pushSrc;
 
   gint deviceIndex;
-  const gchar *uniqueDeviceId;
+  gchar *uniqueDeviceId;
   const gchar *deviceName;
   GstAVFVideoSourcePosition position;
   GstAVFVideoSourceOrientation orientation;
@@ -210,7 +210,7 @@ gst_avf_video_source_device_type_get_type (void)
 - (void)finalize;
 
 @property int deviceIndex;
-@property const gchar *uniqueDeviceId;
+@property gchar *uniqueDeviceId;
 @property const gchar *deviceName;
 @property GstAVFVideoSourcePosition position;
 @property GstAVFVideoSourceOrientation orientation;
@@ -377,8 +377,7 @@ static AVCaptureVideoOrientation GstAVFVideoSourceOrientation2AVCaptureVideoOrie
                           ("No video capture devices found"), (NULL));
       return NO;
     }
-  } else { 
-    // uniqueDeviceId takes priority over position and deviceType
+  } else { // uniqueDeviceId takes priority over position and deviceType
     NSArray *devices = [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo];
 
     [devices enumerateObjectsUsingBlock:^(id object, NSUInteger idx, BOOL *stop) {
@@ -1453,6 +1452,13 @@ gst_avf_video_src_init (GstAVFVideoSrc * src)
 static void
 gst_avf_video_src_finalize (GObject * obj)
 {
+  GstAVFVideoSrcImpl *impl = GST_AVF_VIDEO_SRC_IMPL (obj);
+
+  if(impl.uniqueDeviceId) {
+    g_free(impl.uniqueDeviceId);
+    impl.uniqueDeviceId = NULL;
+  }
+
   CFBridgingRelease(GST_AVF_VIDEO_SRC_CAST(obj)->impl);
 
   G_OBJECT_CLASS (parent_class)->finalize (obj);
@@ -1554,6 +1560,9 @@ gst_avf_video_src_set_property (GObject * object, guint prop_id,
       impl.deviceIndex = g_value_get_int (value);
       break;
     case PROP_UNIQUE_ID:
+      if(impl.uniqueDeviceId) {
+        g_free(impl.uniqueDeviceId);
+      }
       impl.uniqueDeviceId = g_value_dup_string (value);      
       break;
     case PROP_POSITION:

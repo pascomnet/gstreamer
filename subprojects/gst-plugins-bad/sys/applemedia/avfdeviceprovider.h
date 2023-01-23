@@ -76,7 +76,7 @@ struct _GstAvfDevice {
   GstDevice         parent;
 
   GstAvfDeviceType  type;
-  const gchar      *unique_id;
+  gchar            *unique_id;
   const gchar      *element;
 };
 

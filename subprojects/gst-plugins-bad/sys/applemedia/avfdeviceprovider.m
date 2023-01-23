@@ -127,6 +127,9 @@ G_DEFINE_TYPE (GstAvfDevice, gst_avf_device, GST_TYPE_DEVICE);
 
 static GstElement *gst_avf_device_create_element (GstDevice * device,
                                                  const gchar * name);
+
+static void gst_avf_device_finalize (GObject * object);
+
 static gboolean gst_avf_device_reconfigure_element (GstDevice * device,
                                                    GstElement * element);
 
@@ -146,6 +149,7 @@ gst_avf_device_class_init (GstAvfDeviceClass * klass)
 
   object_class->get_property = gst_avf_device_get_property;
   object_class->set_property = gst_avf_device_set_property;
+  object_class->finalize = gst_avf_device_finalize;
 
   g_object_class_install_property (object_class, PROP_UNIQUE_ID,
       g_param_spec_string ("unique-id", "Unique device id",
@@ -156,6 +160,7 @@ gst_avf_device_class_init (GstAvfDeviceClass * klass)
 static void
 gst_avf_device_init (GstAvfDevice * device)
 {
+    device->unique_id = NULL;
 }
 
 static GstElement *
@@ -168,6 +173,18 @@ gst_avf_device_create_element (GstDevice * device, const gchar * name)
   g_object_set (elem, "unique-id", avf_dev->unique_id, NULL);
 
   return elem;
+}
+
+static void
+gst_avf_device_finalize (GObject * object)
+{
+  GstAvfDevice *self = GST_AVF_DEVICE (object);
+
+  if(self->unique_id) {
+    g_free (self->unique_id);
+  }
+
+  G_OBJECT_CLASS (gst_avf_device_parent_class)->finalize (object);
 }
 
 static gboolean
