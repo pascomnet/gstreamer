@@ -383,7 +383,7 @@ static AVCaptureVideoOrientation GstAVFVideoSourceOrientation2AVCaptureVideoOrie
     [devices enumerateObjectsUsingBlock:^(id object, NSUInteger idx, BOOL *stop) {
         AVCaptureDevice *dev = [devices objectAtIndex:idx];
         const gchar* uid = [[dev uniqueID] UTF8String];
-        if(strcmp(uniqueDeviceId, uid) == 0) {
+        if (!strcmp(uniqueDeviceId, uid)) {
             *stop = YES;
             device = dev;
         }
@@ -1454,8 +1454,8 @@ gst_avf_video_src_finalize (GObject * obj)
 {
   GstAVFVideoSrcImpl *impl = GST_AVF_VIDEO_SRC_IMPL (obj);
 
-  if(impl.uniqueDeviceId) {
-    g_free(impl.uniqueDeviceId);
+  if (impl.uniqueDeviceId) {
+    g_free (impl.uniqueDeviceId);
     impl.uniqueDeviceId = NULL;
   }
 
@@ -1560,7 +1560,7 @@ gst_avf_video_src_set_property (GObject * object, guint prop_id,
       impl.deviceIndex = g_value_get_int (value);
       break;
     case PROP_UNIQUE_ID:
-      if(impl.uniqueDeviceId) {
+      if (impl.uniqueDeviceId) {
         g_free(impl.uniqueDeviceId);
       }
       impl.uniqueDeviceId = g_value_dup_string (value);      

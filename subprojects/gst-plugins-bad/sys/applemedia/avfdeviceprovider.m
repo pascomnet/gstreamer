@@ -180,7 +180,7 @@ gst_avf_device_finalize (GObject * object)
 {
   GstAvfDevice *self = GST_AVF_DEVICE (object);
 
-  if(self->unique_id) {
+  if (self->unique_id) {
     g_free (self->unique_id);
   }
 
