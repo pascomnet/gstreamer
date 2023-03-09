@@ -1,10 +1,7 @@
-[wrap-file]
-directory = glib-2.74.6
-source_url = https://download.gnome.org/sources/glib/2.74/glib-2.74.6.tar.xz
-source_fallback_url = https://ftp.acc.umu.se/pub/gnome/sources/glib/2.74/glib-2.74.6.tar.xz
-source_filename = glib-2.74.6.tar.xz
-source_hash = 069cf7e51cd261eb163aaf06c8d1754c6835f31252180aff5814e5afc7757fbc
-wrapdb_version = 2.74.6-1
+[wrap-git]
+directory=glib
+url=https://github.com/pascomnet/glib
+revision=glib-2-74-pascom
 
 [provide]
 dependency_names = gthread-2.0, gobject-2.0, gmodule-no-export-2.0, gmodule-export-2.0, gmodule-2.0, glib-2.0, gio-2.0, gio-windows-2.0, gio-unix-2.0
